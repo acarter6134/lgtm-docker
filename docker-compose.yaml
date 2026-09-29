@@ -1,0 +1,87 @@
+services:
+  # routing
+  alloy:
+    image: grafana/alloy:latest
+    hostname: alloy
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data"] 
+    ports:
+      - "12345:12345"
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+
+  # metrics
+  prometheus:
+    image: prom/prometheus:latest
+    command: ["--web.enable-remote-write-receiver", "--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    hostname: prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - prometheus-data:/prometheus
+
+  # visualization
+  grafana:
+    image: grafana/grafana:latest
+    hostname: grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - 3000:3000
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+    volumes:
+      - ./config/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - grafana-data:/var/lib/grafana
+
+  # logs
+  loki:
+    image: grafana/loki:latest
+    hostname: loki
+    volumes:
+      - loki-data:/loki
+
+  # traces
+  tempo:
+    image: grafana/tempo:latest
+    hostname: tempo
+    command: ["--config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - tempo-data:/var/tempo/
+      - ./config/tempo/tempo.yaml:/etc/tempo/tempo.yaml
+    depends_on:
+      - garage
+
+  # s3 storage for traces
+  garage:
+    image: dxflrs/garage:v2.4.1
+    hostname: garage
+    entrypoint: ["/garage"]
+    command: ["server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: GKf78e3beaa193a408298d8acf0fde5e21 
+      GARAGE_DEFAULT_SECRET_KEY: 43e48a34deeb2c3cefe79f1c5f651ed8ba192eb28d35883ad77fd069a8b1c387
+      GARAGE_DEFAULT_BUCKET: "tempo"
+    volumes:
+      - ./config/garage/garage.toml:/etc/garage.toml
+      - garage-data:/tmp/data
+      - garage-metadata:/tmp/meta
+
+volumes:
+  alloy-data:
+  garage-data:
+  garage-metadata:
+  grafana-data:
+  loki-data:
+  prometheus-data:
+  tempo-data:
